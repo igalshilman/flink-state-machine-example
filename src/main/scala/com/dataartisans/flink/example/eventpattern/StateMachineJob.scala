@@ -82,6 +82,9 @@ object StateMachineJob {
       new FlinkKafkaConsumer010[Event](
         pt.getRequired("input-topic"), new EventDeSerializer(), pt.getProperties))
 
+    // Uncomment to use EventsGeneratorSource which does not require Kafka
+    // val stream = env.addSource(new EventsGeneratorSource(true))
+
     val alerts = stream
       // partition on the address to make sure equal addresses
       // end up in the same state machine flatMap function
