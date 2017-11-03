@@ -99,7 +99,7 @@ object StateMachineJob {
       throw new RuntimeException(s"Got an alert: $any.")
       "Make type checker happy."
     }
-    
+
 
     // trigger program execution
     env.execute()
