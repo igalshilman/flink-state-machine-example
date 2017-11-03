@@ -16,19 +16,24 @@
 
 package com.dataartisans.flink.example.eventpattern
 
-import java.util.UUID
-
-import com.dataartisans.flink.example.eventpattern.kafka.EventDeSerializer
-import grizzled.slf4j.Logger
-import org.apache.flink.api.common.restartstrategy.RestartStrategies
+import org.apache.flink.api.common.state.{ListState, ListStateDescriptor}
 import org.apache.flink.api.java.utils.ParameterTool
+import org.apache.flink.configuration.Configuration
 import org.apache.flink.runtime.state.{FunctionInitializationContext, FunctionSnapshotContext}
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction
 import org.apache.flink.streaming.api.functions.source.SourceFunction.SourceContext
 import org.apache.flink.streaming.api.scala._
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer09
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer011
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer011.Semantic
+import org.apache.flink.streaming.util.serialization.KeyedSerializationSchemaWrapper
 import org.apache.flink.util.XORShiftRandom
+
+import com.dataartisans.flink.example.eventpattern.kafka.{EventDeSerializer, EventPartitioner}
+import grizzled.slf4j.Logger
+
+import java.util.concurrent.CountDownLatch
+import java.util.{Optional, Properties, UUID}
 
 
 /**
@@ -37,7 +42,13 @@ import org.apache.flink.util.XORShiftRandom
   * an operator that adds "event time" to the stream (just counting elements)
   * a Kafka sink writing the resulting stream to a topic
   *
-  * Local invocation line: --numKeys <> --topic statemachine --bootstrap.servers localhost:9092
+  * Local invocation line:
+  *   --numKeys <>
+  *   --topic <>
+  *   --bootstrap.servers localhost:9092
+  *   --transaction.timeout.ms 60000 (transaction timeout for Kafka exactly-once producer)
+  *   --semantic exactly-once (alternatively: none)
+  *   --sleep <> (time in ms to sleep between messages, 0 disables sleeping completely)
  */
 object DataGeneratorJob {
 
@@ -52,78 +63,130 @@ object DataGeneratorJob {
     // this statement enables the checkpointing mechanism with an interval of 5 sec
     env.enableCheckpointing(pt.getInt("checkpointInterval", 5000))
 
-    val stream = env.addSource(new KeyedEventsGeneratorSource(pt.getInt("numKeys", 200)))
+    val semanticArg = pt.get("semantic", "exactly-once")
+    require (
+      semanticArg.equals("exactly-once") || semanticArg.equals("none"),
+      "semantic must be either exactly-once or none, was: " + semanticArg)
+    val semantic = if (semanticArg.equals("exactly-once")) Semantic.EXACTLY_ONCE else Semantic.NONE
 
-    stream.addSink(
-      new FlinkKafkaProducer09[Event](
-        pt.getRequired("topic"), new EventDeSerializer(), pt.getProperties))
+    val stream = env.addSource(
+      new KeyedEventsGeneratorSource(
+        pt.getInt("numKeys", 200),
+        semantic,
+        pt.getLong("sleep", 100)))
+
+    stream.addSink(new FlinkKafkaProducer011[Event](
+      pt.getRequired("topic"),
+      new KeyedSerializationSchemaWrapper[Event](new EventDeSerializer()),
+      createKafkaProducerProperties(pt.getProperties),
+      Optional.of(EventPartitioner),
+      semantic,
+      5))
 
     // trigger program execution
     env.execute("Kafka events generator")
   }
+
+  def createKafkaProducerProperties(properties: Properties): Properties = {
+    KafkaUtils.copyKafkaProperties(
+      properties,
+      Map(
+        "bootstrap.servers" -> null,
+        "transaction.timeout.ms" -> null))
+  }
 }
 
-class KeyedEventsGeneratorSource(numKeys: Int)
+class KeyedEventsGeneratorSource(numKeys: Int, semantic: Semantic, sleep: Long)
   extends RichParallelSourceFunction[Event] with CheckpointedFunction {
 
   @transient var log = Logger(getClass)
 
   // startKey is inclusive, endKey is exclusive
-  case class KeyRange(startKey: Int, endKey: Int, keyState: scala.collection.mutable.Map[Int, State])
+  case class KeyRange(startKey: Int, endKey: Int, keyState: scala.collection.mutable.Map[Int, State]) {
+    require(
+      startKey < endKey,
+      s"startKey must be strictly lower than endKey (startKey: $startKey, endKey: $endKey)")
+  }
 
   var running = true
   val rnd = new XORShiftRandom()
 
+  @transient var keyRanges: ListState[KeyRange] = _
   @transient var localKeyRanges: Seq[KeyRange] = Seq()
+  @transient var cancelLatch: CountDownLatch = _
+
+  /** Only relevant if semantic is not EXACTLY_ONCE. */
   @transient var keyPrefix: String = UUID.randomUUID().toString
 
   override def cancel(): Unit = {
+    if (cancelLatch != null) {
+      cancelLatch.countDown()
+    }
     running = false
   }
 
-  override def initializeState(context: FunctionInitializationContext): Unit = {
+  override def open(parameters: Configuration): Unit = {
+    cancelLatch = new CountDownLatch(1)
+  }
 
+  override def initializeState(context: FunctionInitializationContext): Unit = {
     log = Logger(getClass)
 
     keyPrefix = UUID.randomUUID().toString
 
-    // we always initialize from zero, never snapshot state
+    keyRanges = context.getOperatorStateStore.getListState(new ListStateDescriptor[KeyRange]("keyRanges", classOf[KeyRange]))
 
-    // initialize our initial operator state based on the number of keys and the parallelism
-    val subtaskIndex = getRuntimeContext.getIndexOfThisSubtask
-    val numSubtasks = getRuntimeContext.getNumberOfParallelSubtasks
-
-    // create maxSubtasks/numSubtasks operator states so that we can scale a bit
-    val numKeyRanges = getRuntimeContext.getMaxNumberOfParallelSubtasks / numSubtasks
-    // we might not get exactly the number of requested keys because of this, doesn't matter...
-    val keysPerKeyRange = Math.ceil(numKeys / numKeyRanges.toFloat).toInt
-
-    println(s"KEY STATS $numKeyRanges $numKeys $keysPerKeyRange")
-
-    // which are our key ranges
-    localKeyRanges = 0.until(numKeyRanges)
-      .filter { range => range % numSubtasks == subtaskIndex }
-      .map { rangeIndex =>
-        val startIndex = rangeIndex * keysPerKeyRange
-        val endIndex = rangeIndex * keysPerKeyRange + keysPerKeyRange
-        println(s"START $startIndex until $endIndex")
-        val states: Seq[(Int, State)] = startIndex.until(endIndex).map(i => i -> InitialState)
-        KeyRange(startIndex, endIndex, scala.collection.mutable.Map[Int, State](states: _*))
+    if (context.isRestored && semantic != Semantic.EXACTLY_ONCE) {
+      val keyRangeIterator = Option(keyRanges.get())
+        .getOrElse(throw new IllegalStateException("keyRanges must not be null"))
+        .iterator
+      while (keyRangeIterator.hasNext) {
+        localKeyRanges :+ keyRangeIterator.next()
       }
+    } else {
+      // we always initialize from zero, never snapshot state
 
-    log.info(s"Event source $subtaskIndex/$numSubtasks has key ranges $localKeyRanges.")
+      // initialize our initial operator state based on the number of keys and the parallelism
+      val subtaskIndex = getRuntimeContext.getIndexOfThisSubtask
+      val numSubtasks = getRuntimeContext.getNumberOfParallelSubtasks
 
+      // cannot have more ranges than there are keys
+      val numKeyRanges = Math.min(getRuntimeContext.getMaxNumberOfParallelSubtasks, numKeys)
+
+      // This is the maximum number of keys per range. Empty ranges will be filtered out
+      val keysPerKeyRange = Math.ceil(numKeys / numKeyRanges.toFloat).toInt
+
+      log.info(s"KEY STATS $numKeyRanges $numKeys $keysPerKeyRange")
+
+      // which are our key ranges
+      localKeyRanges = 0
+        .until(numKeyRanges)
+        .filter(range => range % numSubtasks == subtaskIndex)
+        .flatMap { range =>
+          val startIndex = range * keysPerKeyRange
+          // Math.min to avoid ending up with more keys than requested
+          val endIndex = Math.min(startIndex + keysPerKeyRange, numKeys)
+          val states: Seq[(Int, State)] = startIndex.until(endIndex).map(i => i -> InitialState)
+          if (startIndex < endIndex) {
+            log.info(s"START $startIndex until $endIndex")
+            Seq(KeyRange(startIndex, endIndex, scala.collection.mutable.Map[Int, State](states: _*)))
+          } else {
+            Seq.empty
+          }
+        }
+
+      log.info(s"Event source $subtaskIndex/$numSubtasks has key ranges $localKeyRanges.")
+    }
   }
 
   override def snapshotState(context: FunctionSnapshotContext): Unit = {
-    // we don't actually checkpoint but restart fresh on every run with a new key prefix
-    // this avoids breaking a downstream state machine because we might re-emit events to Kafka
-    // No exactly-once producing yet ... :-(
+    keyRanges.clear()
+    localKeyRanges.foreach(keyRanges.add(_))
   }
 
   override def run(ctx: SourceContext[Event]): Unit = {
 
-    while(running) {
+    while(running && localKeyRanges.nonEmpty) {
       val keyRangeIndex = rnd.nextInt(localKeyRanges.size)
       val keyRange = localKeyRanges(keyRangeIndex)
       val key = rnd.nextInt(keyRange.endKey - keyRange.startKey) + keyRange.startKey
@@ -136,9 +199,17 @@ class KeyedEventsGeneratorSource(numKeys: Int)
         } else {
           keyRange.keyState += (key -> newState)
         }
-        ctx.collect(Event(keyPrefix + "##" + key, nextEvent))
+
+        val sourceAddress =
+          if (semantic == Semantic.EXACTLY_ONCE) "" + key else keyPrefix + "" + key
+        ctx.collect(Event(sourceAddress, nextEvent))
+      }
+      if (sleep > 0) {
+        Thread.sleep(sleep)
       }
     }
+
+    cancelLatch.await()
   }
 }
 

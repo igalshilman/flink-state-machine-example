@@ -16,7 +16,6 @@
 
 package com.dataartisans.flink.example.eventpattern
 
-import com.dataartisans.flink.example.eventpattern.kafka.EventDeSerializer
 import org.apache.flink.api.common.functions.RichFlatMapFunction
 import org.apache.flink.api.common.restartstrategy.RestartStrategies
 import org.apache.flink.api.common.state.{ValueState, ValueStateDescriptor}
@@ -26,8 +25,12 @@ import org.apache.flink.contrib.streaming.state.RocksDBStateBackend
 import org.apache.flink.runtime.state.filesystem.FsStateBackend
 import org.apache.flink.streaming.api.environment.CheckpointConfig.ExternalizedCheckpointCleanup
 import org.apache.flink.streaming.api.scala._
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer010
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer011
 import org.apache.flink.util.Collector
+
+import com.dataartisans.flink.example.eventpattern.kafka.EventDeSerializer
+
+import java.util.Properties
 
 /**
  * Demo streaming program that receives (or generates) a stream of events and evaluates
@@ -39,6 +42,7 @@ import org.apache.flink.util.Collector
  * --bootstrap.servers localhost:9092
  * --zookeeper.servers localhost:2181 (only needed for older Kafka versions)
  * --checkpointDir <>
+ * --isolation.level <> (default is read_committed)
  *
  * StateBackend-related options:
  * --stateBackend: file or rocksdb (default: file)
@@ -79,8 +83,10 @@ object StateMachineJob {
     }
 
     val stream = env.addSource(
-      new FlinkKafkaConsumer010[Event](
-        pt.getRequired("input-topic"), new EventDeSerializer(), pt.getProperties))
+      new FlinkKafkaConsumer011[Event](
+        pt.getRequired("input-topic"),
+        new EventDeSerializer(),
+        createKafkaConsumerProperties(pt.getProperties)))
 
     // Uncomment to use EventsGeneratorSource which does not require Kafka
     // val stream = env.addSource(new EventsGeneratorSource(true))
@@ -103,6 +109,18 @@ object StateMachineJob {
 
     // trigger program execution
     env.execute()
+  }
+
+  /**
+    * Creates a copy of the input containing only the relevant keys for the Kafka Consumer.
+    */
+  private def createKafkaConsumerProperties(properties: Properties): Properties = {
+    KafkaUtils.copyKafkaProperties(
+      properties,
+      Map(
+        "bootstrap.servers" -> null,
+        "zookeeper.servers" -> null,
+        "isolation.level" -> "read_committed"))
   }
 }
 
