@@ -116,12 +116,11 @@ class StateMachineMapper extends RichFlatMapFunction[Event, Alert] {
   private[this] var currentState: ValueState[State] = _
     
   override def open(config: Configuration): Unit = {
-    currentState = getRuntimeContext.getState(
-      new ValueStateDescriptor("state", classOf[State], InitialState))
+    currentState = getRuntimeContext.getState(new ValueStateDescriptor("state", classOf[State]))
   }
   
   override def flatMap(t: Event, out: Collector[Alert]): Unit = {
-    val state = currentState.value()
+    val state = Option(currentState.value()).getOrElse(InitialState)
     val nextState = state.transition(t.event)
     
     nextState match {
