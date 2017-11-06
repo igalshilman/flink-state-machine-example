@@ -136,7 +136,7 @@ class KeyedEventsGeneratorSource(numKeys: Int, semantic: Semantic, sleep: Long)
 
     keyRanges = context.getOperatorStateStore.getListState(new ListStateDescriptor[KeyRange]("keyRanges", classOf[KeyRange]))
 
-    if (context.isRestored && semantic != Semantic.EXACTLY_ONCE) {
+    if (context.isRestored && semantic == Semantic.EXACTLY_ONCE) {
       val keyRangeIterator = Option(keyRanges.get())
         .getOrElse(throw new IllegalStateException("keyRanges must not be null"))
         .iterator
