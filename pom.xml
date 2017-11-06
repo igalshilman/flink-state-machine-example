@@ -27,7 +27,7 @@ under the License.
     <version>1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>Flink Streaming Demo Job</name>
+    <name>Flink State Machine Demo Job</name>
     <url>http://www.data-artisans.com</url>
 
     <properties>
