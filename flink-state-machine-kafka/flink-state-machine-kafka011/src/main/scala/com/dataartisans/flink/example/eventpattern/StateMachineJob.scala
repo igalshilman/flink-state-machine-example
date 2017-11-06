@@ -89,7 +89,7 @@ object StateMachineJob {
         createKafkaConsumerProperties(pt.getProperties)))
 
     // Uncomment line below to use EventsGeneratorSource which does not require Kafka
-    // val stream = env.addSource(new EventsGeneratorSource(true))
+    // val stream = env.addSource(new EventsGeneratorSource(true)).setParallelism(1)
 
     val alerts = stream
       // partition on the address to make sure equal addresses
