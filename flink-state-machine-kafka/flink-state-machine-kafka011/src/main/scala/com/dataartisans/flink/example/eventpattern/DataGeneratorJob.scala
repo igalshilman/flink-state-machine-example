@@ -99,6 +99,8 @@ object DataGeneratorJob {
 class KeyedEventsGeneratorSource(numKeys: Int, semantic: Semantic, sleep: Long)
   extends RichParallelSourceFunction[Event] with CheckpointedFunction {
 
+  require(numKeys > 0, "numKeys must be positive")
+
   @transient var log = Logger(getClass)
 
   // startKey is inclusive, endKey is exclusive
