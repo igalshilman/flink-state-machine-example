@@ -144,8 +144,6 @@ class KeyedEventsGeneratorSource(numKeys: Int, semantic: Semantic, sleep: Long)
         localKeyRanges :+ keyRangeIterator.next()
       }
     } else {
-      // we always initialize from zero, never snapshot state
-
       // initialize our initial operator state based on the number of keys and the parallelism
       val subtaskIndex = getRuntimeContext.getIndexOfThisSubtask
       val numSubtasks = getRuntimeContext.getNumberOfParallelSubtasks
