@@ -29,7 +29,7 @@ import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer011.Semanti
 import org.apache.flink.streaming.util.serialization.KeyedSerializationSchemaWrapper
 import org.apache.flink.util.XORShiftRandom
 
-import com.dataartisans.flink.example.eventpattern.kafka.{EventDeSerializer, EventPartitioner}
+import com.dataartisans.flink.example.eventpattern.kafka.{EventDeSerializer, EventPartitioner, KafkaUtils}
 import grizzled.slf4j.Logger
 
 import java.util.concurrent.CountDownLatch

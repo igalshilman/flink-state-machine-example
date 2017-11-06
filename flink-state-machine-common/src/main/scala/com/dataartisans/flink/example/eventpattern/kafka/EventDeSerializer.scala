@@ -16,17 +16,19 @@
 
 package com.dataartisans.flink.example.eventpattern.kafka
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
-import com.dataartisans.flink.example.eventpattern.Event
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.core.memory.{DataInputViewStreamWrapper, DataOutputViewStreamWrapper}
 import org.apache.flink.streaming.api.scala._
-import org.apache.flink.streaming.util.serialization.{DeserializationSchema, KeyedSerializationSchema, SerializationSchema}
+import org.apache.flink.streaming.util.serialization.{DeserializationSchema, SerializationSchema}
 import org.apache.flink.types.StringValue
 
+import com.dataartisans.flink.example.eventpattern.Event
+
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
+
 /**
- * A serializer / Deserializer for converting [[Event]] objects from/to byte sequences
- * for Kafka.
+ * A serializer / Deserializer for converting [[com.dataartisans.flink.example.eventpattern.Event]]
+ * objects from/to byte sequences for Kafka.
  */
 class EventDeSerializer extends DeserializationSchema[Event] with SerializationSchema[Event] {
   

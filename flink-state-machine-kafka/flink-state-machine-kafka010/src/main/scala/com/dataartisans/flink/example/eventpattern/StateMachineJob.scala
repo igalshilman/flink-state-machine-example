@@ -16,6 +16,7 @@
 
 package com.dataartisans.flink.example.eventpattern
 
+import com.dataartisans.flink.example.eventpattern.kafka.EventDeSerializer
 import org.apache.flink.api.common.functions.RichFlatMapFunction
 import org.apache.flink.api.common.restartstrategy.RestartStrategies
 import org.apache.flink.api.common.state.{ValueState, ValueStateDescriptor}
@@ -25,12 +26,8 @@ import org.apache.flink.contrib.streaming.state.RocksDBStateBackend
 import org.apache.flink.runtime.state.filesystem.FsStateBackend
 import org.apache.flink.streaming.api.environment.CheckpointConfig.ExternalizedCheckpointCleanup
 import org.apache.flink.streaming.api.scala._
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer011
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer010
 import org.apache.flink.util.Collector
-
-import com.dataartisans.flink.example.eventpattern.kafka.EventDeSerializer
-
-import java.util.Properties
 
 /**
  * Demo streaming program that receives (or generates) a stream of events and evaluates
@@ -42,7 +39,6 @@ import java.util.Properties
  * --bootstrap.servers localhost:9092
  * --zookeeper.servers localhost:2181 (only needed for older Kafka versions)
  * --checkpointDir <>
- * --isolation.level <> (default is read_committed)
  *
  * StateBackend-related options:
  * --stateBackend: file or rocksdb (default: file)
@@ -83,13 +79,8 @@ object StateMachineJob {
     }
 
     val stream = env.addSource(
-      new FlinkKafkaConsumer011[Event](
-        pt.getRequired("input-topic"),
-        new EventDeSerializer(),
-        createKafkaConsumerProperties(pt.getProperties)))
-
-    // Uncomment to use EventsGeneratorSource which does not require Kafka
-    // val stream = env.addSource(new EventsGeneratorSource(true))
+      new FlinkKafkaConsumer010[Event](
+        pt.getRequired("input-topic"), new EventDeSerializer(), pt.getProperties))
 
     val alerts = stream
       // partition on the address to make sure equal addresses
@@ -105,22 +96,10 @@ object StateMachineJob {
       throw new RuntimeException(s"Got an alert: $any.")
       "Make type checker happy."
     }
-
+    
 
     // trigger program execution
     env.execute()
-  }
-
-  /**
-    * Creates a copy of the input containing only the relevant keys for the Kafka Consumer.
-    */
-  private def createKafkaConsumerProperties(properties: Properties): Properties = {
-    KafkaUtils.copyKafkaProperties(
-      properties,
-      Map(
-        "bootstrap.servers" -> null,
-        "zookeeper.servers" -> null,
-        "isolation.level" -> "read_committed"))
   }
 }
 
@@ -134,11 +113,12 @@ class StateMachineMapper extends RichFlatMapFunction[Event, Alert] {
   private[this] var currentState: ValueState[State] = _
     
   override def open(config: Configuration): Unit = {
-    currentState = getRuntimeContext.getState(new ValueStateDescriptor("state", classOf[State]))
+    currentState = getRuntimeContext.getState(
+      new ValueStateDescriptor("state", classOf[State], InitialState))
   }
   
   override def flatMap(t: Event, out: Collector[Alert]): Unit = {
-    val state = Option(currentState.value()).getOrElse(InitialState)
+    val state = currentState.value()
     val nextState = state.transition(t.event)
     
     nextState match {

@@ -93,7 +93,6 @@ abstract class StandaloneGeneratorBase {
 }
 
 
-
 /**
  * A thread running a [[EventsGenerator]] and pushes generated events to the given collector
  * (such as Kafka / Socket / ...)
