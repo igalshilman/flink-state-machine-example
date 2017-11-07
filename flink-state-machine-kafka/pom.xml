@@ -31,7 +31,7 @@ under the License.
 	<artifactId>streaming-state-machine-kafka</artifactId>
 	<packaging>pom</packaging>
 
-	<name>Flink State Machine for Kafka 0.10</name>
+	<name>Flink State Machine Jobs for Kafka</name>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
