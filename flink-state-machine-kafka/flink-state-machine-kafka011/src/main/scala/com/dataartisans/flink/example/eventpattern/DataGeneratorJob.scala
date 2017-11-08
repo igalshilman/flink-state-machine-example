@@ -114,7 +114,7 @@ class KeyedEventsGeneratorSource(numKeys: Int, semantic: Semantic, sleep: Long)
   val rnd = new XORShiftRandom()
 
   @transient var keyRanges: ListState[KeyRange] = _
-  @transient var localKeyRanges: Seq[KeyRange] = Seq()
+  @transient var localKeyRanges: Seq[KeyRange] = _
   @transient var cancelLatch: CountDownLatch = _
 
   /** Only relevant if semantic is not EXACTLY_ONCE. */
@@ -133,6 +133,8 @@ class KeyedEventsGeneratorSource(numKeys: Int, semantic: Semantic, sleep: Long)
 
   override def initializeState(context: FunctionInitializationContext): Unit = {
     log = Logger(getClass)
+
+    localKeyRanges = Seq()
 
     keyPrefix = UUID.randomUUID().toString
 
