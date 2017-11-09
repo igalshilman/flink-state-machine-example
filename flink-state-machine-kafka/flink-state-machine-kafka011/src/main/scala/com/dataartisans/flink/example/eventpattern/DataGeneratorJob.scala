@@ -35,6 +35,8 @@ import grizzled.slf4j.Logger
 import java.util.concurrent.CountDownLatch
 import java.util.{Optional, Properties, UUID}
 
+import scala.collection.JavaConverters.asScalaIteratorConverter
+
 
 /**
   * This Flink job runs the following:
@@ -134,23 +136,21 @@ class KeyedEventsGeneratorSource(numKeys: Int, semantic: Semantic, sleep: Long)
   override def initializeState(context: FunctionInitializationContext): Unit = {
     log = Logger(getClass)
 
-    localKeyRanges = Seq()
-
     keyPrefix = UUID.randomUUID().toString
 
     keyRanges = context.getOperatorStateStore.getListState(new ListStateDescriptor[KeyRange]("keyRanges", classOf[KeyRange]))
+
+    val subtaskIndex = getRuntimeContext.getIndexOfThisSubtask
+    val numSubtasks = getRuntimeContext.getNumberOfParallelSubtasks
 
     if (context.isRestored && semantic == Semantic.EXACTLY_ONCE) {
       val keyRangeIterator = Option(keyRanges.get())
         .getOrElse(throw new IllegalStateException("keyRanges must not be null"))
         .iterator
-      while (keyRangeIterator.hasNext) {
-        localKeyRanges :+ keyRangeIterator.next()
-      }
+
+      localKeyRanges = keyRangeIterator.asScala.toSeq
     } else {
       // initialize our initial operator state based on the number of keys and the parallelism
-      val subtaskIndex = getRuntimeContext.getIndexOfThisSubtask
-      val numSubtasks = getRuntimeContext.getNumberOfParallelSubtasks
 
       // cannot have more ranges than there are keys
       val numKeyRanges = Math.min(getRuntimeContext.getMaxNumberOfParallelSubtasks, numKeys)
@@ -176,9 +176,9 @@ class KeyedEventsGeneratorSource(numKeys: Int, semantic: Semantic, sleep: Long)
             Seq.empty
           }
         }
-
-      log.info(s"Event source $subtaskIndex/$numSubtasks has key ranges $localKeyRanges.")
     }
+
+    log.info(s"Event source $subtaskIndex/$numSubtasks has key ranges $localKeyRanges.")
   }
 
   override def snapshotState(context: FunctionSnapshotContext): Unit = {
