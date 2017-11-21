@@ -1,0 +1,8 @@
+[
+  {
+    "Classification": "yarn-site",
+    "Properties": {
+      "yarn.resourcemanager.am.max-attempts": "10000000"
+    }
+  }
+]
