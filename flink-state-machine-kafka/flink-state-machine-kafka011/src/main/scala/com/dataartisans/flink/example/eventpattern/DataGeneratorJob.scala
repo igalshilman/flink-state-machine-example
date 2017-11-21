@@ -19,6 +19,7 @@ package com.dataartisans.flink.example.eventpattern
 import org.apache.flink.api.common.state.{ListState, ListStateDescriptor}
 import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.configuration.Configuration
+import org.apache.flink.runtime.state.filesystem.FsStateBackend
 import org.apache.flink.runtime.state.{FunctionInitializationContext, FunctionSnapshotContext}
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction
@@ -64,6 +65,15 @@ object DataGeneratorJob {
 
     // this statement enables the checkpointing mechanism with an interval of 5 sec
     env.enableCheckpointing(pt.getInt("checkpointInterval", 5000))
+
+    val stateBackend = pt.get("stateBackend", "file")
+    val checkpointDir = pt.getRequired("checkpointDir")
+
+    stateBackend match {
+      case "file" =>
+        val asyncCheckpoints = pt.getBoolean("asyncCheckpoints", false)
+        env.setStateBackend(new FsStateBackend(checkpointDir, asyncCheckpoints))
+    }
 
     val semanticArg = pt.get("semantic", "exactly-once")
     require (
