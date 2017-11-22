@@ -95,7 +95,7 @@ object DataGeneratorJob {
     stream.addSink(new FlinkKafkaProducer011[Event](
       pt.getRequired("topic"),
       new KeyedSerializationSchemaWrapper[Event](new EventDeSerializer()),
-      createKafkaProducerProperties(pt.getProperties),
+      pt.getProperties,
       Optional.of(EventPartitioner),
       semantic,
       5))
@@ -104,13 +104,6 @@ object DataGeneratorJob {
     env.execute("Kafka events generator")
   }
 
-  def createKafkaProducerProperties(properties: Properties): Properties = {
-    KafkaUtils.copyKafkaProperties(
-      properties,
-      Map(
-        "bootstrap.servers" -> null,
-        "transaction.timeout.ms" -> null))
-  }
 }
 
 class KeyedEventsGeneratorSource(numKeys: Int, semantic: Semantic, sleep: Long)

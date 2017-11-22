@@ -21,23 +21,17 @@ import java.util.Properties
 object KafkaUtils {
 
   /**
-    * Returns a copy of `properties` that contains only keys that are also in
-    * `kafkaPropertyToDefault`. If a property is not represented in `properties`,
-    * the default value as specified by `kafkaPropertyToDefault` is used.
-    * If no default value is specified (i.e., null), the key will not included in the copy.
-    *
-    * @param properties Map that can contain properties that are not relevant to Kafka
-    * @param kafkaPropertyToDefault Mappings from Kafka property name to default value (null if none)
+    * Returns a copy of `properties` where we set the handed in default values if they are not
+    * set in the original properties.
     */
   def copyKafkaProperties(properties: Properties, kafkaPropertyToDefault: Map[String, String]): Properties = {
-    val consumerProperties = new Properties()
     kafkaPropertyToDefault.foreach { propertyDefaultValue =>
       val value = properties.getProperty(propertyDefaultValue._1, propertyDefaultValue._2)
-      if (value != null) {
-        consumerProperties.put(propertyDefaultValue._1, value)
+      if (value == propertyDefaultValue._2) {
+        properties.put(propertyDefaultValue._1, propertyDefaultValue._2)
       }
     }
-    consumerProperties
+    properties
   }
 
 }

@@ -58,7 +58,7 @@ object StateMachineJob {
 
     // retrieve input parameters
     val pt: ParameterTool = ParameterTool.fromArgs(args)
-    
+
     // create the environment to create streams and configure execution
     val env = StreamExecutionEnvironment.getExecutionEnvironment
     env.enableCheckpointing(pt.getInt("checkpointInterval", 5000))
@@ -95,7 +95,7 @@ object StateMachineJob {
       // partition on the address to make sure equal addresses
       // end up in the same state machine flatMap function
       .keyBy("sourceAddress")
-      
+
       // the function that evaluates the state machine over the sequence of events
       .flatMap(new StateMachineMapper())
 
@@ -118,8 +118,6 @@ object StateMachineJob {
     KafkaUtils.copyKafkaProperties(
       properties,
       Map(
-        "bootstrap.servers" -> null,
-        "zookeeper.servers" -> null,
         "isolation.level" -> "read_committed"))
   }
 }
@@ -130,17 +128,17 @@ object StateMachineJob {
  * consistent with the current state, the function produces an alert.
  */
 class StateMachineMapper extends RichFlatMapFunction[Event, Alert] {
-  
+
   private[this] var currentState: ValueState[State] = _
-    
+
   override def open(config: Configuration): Unit = {
     currentState = getRuntimeContext.getState(new ValueStateDescriptor("state", classOf[State]))
   }
-  
+
   override def flatMap(t: Event, out: Collector[Alert]): Unit = {
     val state = Option(currentState.value()).getOrElse(InitialState)
     val nextState = state.transition(t.event)
-    
+
     nextState match {
       case InvalidTransition =>
         out.collect(Alert(t.sourceAddress, state, t.event))
