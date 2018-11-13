@@ -58,8 +58,8 @@ class EventsGeneratorSource(val printSpeed: Boolean = false) extends RichParalle
     
     val generator = new EventsGenerator()
     
-    val range = Integer.MAX_VALUE / getRuntimeContext.getNumberOfParallelSubtasks()
-    val min = range * getRuntimeContext.getIndexOfThisSubtask()
+    val range = Integer.MAX_VALUE / getRuntimeContext.getNumberOfParallelSubtasks
+    val min = range * getRuntimeContext.getIndexOfThisSubtask
     val max = min + range
     
     while (running) {

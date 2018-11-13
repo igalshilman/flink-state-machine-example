@@ -42,6 +42,7 @@ under the License.
 	<modules>
 		<module>flink-state-machine-kafka010</module>
 		<module>flink-state-machine-kafka011</module>
+		<module>flink-state-machine-kafka</module>
 	</modules>
 
 	<dependencies>
